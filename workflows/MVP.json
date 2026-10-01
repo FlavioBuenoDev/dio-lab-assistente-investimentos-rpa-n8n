@@ -1,0 +1,443 @@
+{
+  "name": "MVP",
+  "nodes": [
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1792,
+        -16
+      ],
+      "id": "d1400ecf-6068-46d3-ac42-6aa5283e4f68",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Escreva um e-mail curto em pt-BR para o cliente abaixo, sem prometer ganhos e sem garantias.\n\nCliente:\nNome: {{ $json.nome }}\nPerfil: {{ $json.perfil }}\nSaldo: {{ $json.saldo_texto }}\nemail_to: {{ $json.email_to }}\n\nRecomendações:\nProduto: {{ $json.recomendacao[0].produto }}\nMinimo: {{ $json.recomendacao[0].minimo }}\nRentabilidade: {{ $json.recomendacao[0].rentabilidade }}\nMotivo:\n\nRetorne APENAS JSON com:\n{\n    \"ok\":\"....\",\n    \"to\":\"...,\"\n\t\"subject\": \"...\",\n\t\"text_body\": \"...\",\n\t\"html_body\": \"...\"\n}",
+        "hasOutputParser": true,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        688,
+        0
+      ],
+      "id": "21222d4c-399a-4ba7-8322-d85575927b9f",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "model": "openai/gpt-oss-120b",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        640,
+        176
+      ],
+      "id": "ed970c48-777f-45e9-b0e5-b4b3d31e27a4",
+      "name": "Groq Chat Model",
+      "credentials": {
+        "groqApi": {
+          "id": "KLEpwrPONexoCBI8",
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Pega todos os itens recebidos do nó anterior no n8n\nconst inputItems = $input.all();\nconst out = [];\n\nfor (const item of inputItems) {\n    const data = item.json;\n    \n    // Verifica se existe o campo 'output' e se ele é uma string JSON\n    if (data.output && typeof data.output === 'string') {\n        try {\n            // Remove quebras de linha escapadas e faz o parse da string JSON\n            const parsedOutput = JSON.parse(data.output);\n            \n            // Adiciona o item normalizado com as propriedades solicitadas\n            out.push({\n                json: {\n                    ...data, // Mantém os outros dados originais\n                    ok: true,\n                    to: parsedOutput.to || parsedOutput.to || \"\", // Pega o destinatário dos campos existentes\n                    subject: parsedOutput.subject || \"\",\n                    text_body: parsedOutput.text_body || \"\",\n                    html_body: parsedOutput.html_body || \"\"\n                }\n            });\n        } catch (e) {\n            // Caso ocorra algum erro no parse\n            out.push({\n                json: {\n                    ...data,\n                    ok: false,\n                    to: data.to || data.email || \"\",\n                    error_parse: \"Falha ao converter o output para JSON: \" + e.message\n                }\n            });\n        }\n    } else {\n        // Se o output já for um objeto ou não existir\n        out.push({\n            json: {\n                ...data,\n                ok: false,\n                to: data.to || data.to || \"\"\n            }\n        });\n    }\n}\n\nreturn out;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        0
+      ],
+      "id": "275a5a19-518f-4b15-90a8-b99302575a53",
+      "name": "Normaliza e organizar o codigo"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "Clientes",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -752,
+        -128
+      ],
+      "id": "61983169-de01-43ea-8638-51b4215e3ddc",
+      "name": "Recebimento dos dados",
+      "webhookId": "dda47632-33c5-4a7c-a8a8-e312fe5d9ab5"
+    },
+    {
+      "parameters": {
+        "url": "https://digitalinnovationone.github.io/dio-lab-assistente-investimentos-rpa-n8n/data.csv",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        -480,
+        -16
+      ],
+      "id": "7b1334de-a495-481f-b9de-efe4c38735a9",
+      "name": "Coleta de dados"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        128,
+        -240
+      ],
+      "id": "842802e4-d261-4c36-8159-c78c4ba41f70",
+      "name": "Mesclagem de dados"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Pega o  CSV como texto vindo do HTTP Requests\n\nconst csvRaw = $json.data ?? $json.body ?? $json;\nconst text = (typeof csvRaw === \"string\") ? csvRaw : JSON.stringify(csvRaw);\n\nconst lines = text.split(/\\r?\\n/).map(l => l.trim()).filter(Boolean);\nconst headers = lines[0].split(\",\").map(h => h.trim());\n\nconst investimentos = lines.slice(1).map(line => {\n  const cols = line.split(\",\").map(c => c.trim());\n  const obj = {};\n  headers.forEach((h, i) => obj[h] = cols[i] ?? \"\");\n \n\n  return obj;  \n\n});\n\nreturn [{ json: {investimentos} }]\n\n\nreturn [{ json: { investimentos }}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -176,
+        -16
+      ],
+      "id": "add01542-c796-4191-8eaf-d6a18accb5f4",
+      "name": "JSON CSV"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Pega os dados que chegam do nó anterior\nconst inputData = $input.all()[0].json;\n\n// Garante que temos as listas de clientes e investimentos (ajuste o caminho se necessário, ex: inputData.body)\nconst clientes =  $input.first().json.body.clientes || [];\nconst investimentos =  $input.first().json.investimentos || [];\n\nconst resultados = [];\n\n// Percorre cada cliente\nfor (const cliente of clientes) {\n  // Filtra todos os investimentos que correspondem ao perfil do cliente\n  const produtosCompativeis = investimentos.filter(inv => inv.perfil === cliente.perfil);\n  \n  // Monta a lista de produtos em formato de texto para a mensagem\n  let listaProdutosTexto = \"\";\n  produtosCompativeis.forEach(prod => {\n    listaProdutosTexto += `\\n- *\\(${prod.produto}* (Rentabilidade: ${prod.rentabilidade}), Mínimo: R$ ${prod.minimo}`;\n  });\n\n  // Define um tom personalizado com base no perfil\n  let tomPerfil = \"\";\n  if (cliente.perfil === \"Conservador\") {\n    tomPerfil = \"priorizando segurança e estabilidade\";\n  } else if (cliente.perfil === \"Moderado\") {\n    tomPerfil = \"buscando um equilíbrio inteligente entre risco e retorno\";\n  } else {\n    tomPerfil = \"focado em rentabilidade robusta e exposição a ativos de maior valorização\";\n  }\n\n  // Cria a mensagem personalizada completa\n  const mensagem = `Olá, ${cliente.nome}! Tudo bem? \n\nNotamos que o seu saldo atual é de \\(${cliente.saldo} e seu perfil de investidor é ${cliente.perfil}, ${tomPerfil}.\n\nCom base nisso, separamos as melhores opções de investimento disponíveis para o seu perfil:\n${listaProdutosTexto}\n\nPodemos simular uma aplicação em alguma dessas opções para você fazer o seu dinheiro render mais? Estamos à disposição! 🚀`;\n\n  // Adiciona o resultado processado para este cliente\n  resultados.push({\n    json: {\n      nome: cliente.nome,\n      email: cliente.email,\n      saldo: cliente.saldo,\n      perfil: cliente.perfil,\n      produtos_recomendados: produtosCompativeis,\n      mensagem_personalizada: mensagem\n    }\n  });\n}\n\nreturn resultados;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        256,
+        0
+      ],
+      "id": "dc59eaad-292e-4317-b7c2-7e93b7deea45",
+      "name": "Mensagem personalizada para cada cliente"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Pega todos os itens recebidos do nó anterior no n8n\nconst inputItems = $input.all();\nconst out = [];\n\nfunction parseBRL(valor) {\n    if (!valor) return 0;\n    const s = String(valor)\n        .replace(\"R$\", '')\n        .replace(/\\./g, '')\n        .replace(',', '.')\n        .replace(/[^\\d.-]/g, '')\n        .trim();\n    const n = Number(s);\n    return Number.isFinite(n) ? n : 0;\n}\n\n// Percorre cada item que chegou do nó anterior\nfor (const item of inputItems) {\n    // Extrai o objeto json do item\n    const data = item.json;\n    \n    // Se os dados estiverem dentro de uma propriedade 'resultados' (caso venham agrupados), \n    // desmembra; senão, trata o próprio item atual.\n    const listaResultados = Array.isArray(data.resultados) ? data.resultados : [data];\n\n    for (const c of listaResultados) {\n        // Ignora se o objeto estiver vazio\n        if (!c || Object.keys(c).length === 0) continue;\n\n        const saldoNum = c.saldo_num ?? parseBRL(c.saldo_texto ?? c.saldo);\n        \n        out.push({ \n            json: {\n                email_to: String(c.email || \"\").trim(),\n                nome: String(c.nome || \"\").trim(),\n                perfil: c.perfil || \"\",\n                saldo_texto: c.saldo_texto ?? c.saldo ?? \"\",\n                saldo_num: saldoNum,\n                recomendacao: $input.first().json.produtos_recomendados || \"\",\n                motivo: c.motivo || \"\",\n                mensagem_base: c.mensagem_escolhida || c.mensagem || \"\",\n                copy_rules: {\n                    idioma: \"pt-BR\",\n                    tom: \"amigavel e profissional\",\n                    tamanho: \"curto (4-6 linhas)\",\n                    evitar: [\"promessas de ganho\", \"garantias\", \"linguagem agressiva\"]\n                }\n            } \n        });\n    }\n}\n\nreturn out;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        496,
+        0
+      ],
+      "id": "64f97a2a-49d3-411b-9f23-4ea9567a0589",
+      "name": "Refina o recebimento do codigo"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "78952fb0-8a88-450d-a987-9729991d8a08",
+              "leftValue": "={{ $json.to }}",
+              "rightValue": "^[^@\\s]+@[^@\\s^]+\\.[^@\\s^]+$",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1344,
+        0
+      ],
+      "id": "7d73cf28-954e-490b-a2d2-41a21f299a85",
+      "name": "Verifica se o e-mail é verdadeiro"
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "sendTo": "={{ $('Refina o recebimento do codigo').item.json.email_to }}",
+        "subject": "={{ $json.subject }}",
+        "message": "={{ $json.html_body }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1600,
+        -16
+      ],
+      "id": "6e24258d-7a1f-4452-9dc7-b4d44830b875",
+      "name": "Envio de E-mail",
+      "webhookId": "bfb95634-b150-4817-9e9a-5a66c8153b46",
+      "credentials": {
+        "googleApi": {
+          "id": "6u8mnNIE4UUECKHc",
+          "name": "Conta Curso"
+        }
+      }
+    }
+  ],
+  "pinData": {
+    "AI Agent": [
+      {
+        "json": {
+          "output": "{\n  \"ok\": \"email prepared\",\n  \"to\": \"ana@email.com\",\n  \"subject\": \"Sugestão de investimento para seu perfil\",\n  \"text_body\": \"Olá Ana,\\n\\nConforme seu perfil conservador e considerando o saldo disponível de R$ 12.500,00, sugerimos a aplicação em Poupança, que apresenta rentabilidade média de 6,2% ao ano. O valor mínimo para iniciar é de R$ 100,00.\\n\\nCaso tenha dúvidas ou queira conversar sobre outras opções, estou à disposição.\\n\\nAtenciosamente,\\n[Seu Nome]\\n[Seu Cargo]\\n[Seu Contato]\",\n  \"html_body\": \"<p>Olá Ana,</p><p>Conforme seu perfil conservador e considerando o saldo disponível de <strong>R$ 12.500,00</strong>, sugerimos a aplicação em <strong>Poupança</strong>, que apresenta rentabilidade média de <strong>6,2% ao ano</strong>. O valor mínimo para iniciar é de <strong>R$ 100,00</strong>.</p><p>Caso tenha dúvidas ou queira conversar sobre outras opções, estou à disposição.</p><p>Atenciosamente,<br>[Seu Nome]<br>[Seu Cargo]<br>[Seu Contato]</p>\"\n}"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      },
+      {
+        "json": {
+          "output": "{\n    \"ok\": \"email_generated\",\n    \"to\": \"bruno@email.com\",\n    \"subject\": \"Sugestão de investimento em Poupança\",\n    \"text_body\": \"Olá Bruno Lima,\\n\\nConsiderando seu perfil moderado e o saldo disponível de R$ 3.200,00, sugerimos a aplicação em Poupança, que apresenta rentabilidade de 6,2% ao ano. O investimento mínimo é de R$ 100,00.\\n\\nCaso tenha interesse ou queira esclarecer dúvidas, estamos à disposição.\\n\\nAtenciosamente,\\nEquipe de Investimentos\",\n    \"html_body\": \"<p>Olá Bruno Lima,</p><p>Considerando seu perfil moderado e o saldo disponível de R$ 3.200,00, sugerimos a aplicação em <strong>Poupança</strong>, que apresenta rentabilidade de <strong>6,2% ao ano</strong>. O investimento mínimo é de <strong>R$ 100,00</strong>.</p><p>Caso tenha interesse ou queira esclarecer dúvidas, estamos à disposição.</p><p>Atenciosamente,<br>Equipe de Investimentos</p>\"\n}"
+        },
+        "pairedItem": {
+          "item": 1
+        }
+      },
+      {
+        "json": {
+          "output": "{\n    \"ok\": \"true\",\n    \"to\": \"carla@email.com\",\n    \"subject\": \"Sugestão de investimento em Poupança\",\n    \"text_body\": \"Olá Carla,\\n\\nCom base no seu perfil arrojado, sugerimos considerar a aplicação em Poupança, que atualmente apresenta rentabilidade de 6,2% ao ano. O investimento mínimo é de R$ 100,00.\\n\\nCaso tenha interesse ou queira esclarecer dúvidas, estamos à disposição.\\n\\nAtenciosamente,\\nEquipe de Investimentos\",\n    \"html_body\": \"<p>Olá Carla,</p><p>Com base no seu perfil arrojado, sugerimos considerar a aplicação em <strong>Poupança</strong>, que atualmente apresenta rentabilidade de <strong>6,2% ao ano</strong>. O investimento mínimo é de <strong>R$ 100,00</strong>.</p><p>Caso tenha interesse ou queira esclarecer dúvidas, estamos à disposição.</p><p>Atenciosamente,<br>Equipe de Investimentos</p>\"\n}"
+        },
+        "pairedItem": {
+          "item": 2
+        }
+      },
+      {
+        "json": {
+          "output": "{\n    \"ok\": \"true\",\n    \"to\": \"daniel@email.com\",\n    \"subject\": \"Recomendação de investimento em Poupança\",\n    \"text_body\": \"Olá Daniel Oliveira,\\n\\nConforme seu perfil conservador e o saldo disponível de R$ 850,00, sugerimos considerar a aplicação em Poupança, que atualmente apresenta rentabilidade de 6,2% ao ano. O valor mínimo para aplicação é de R$ 100,00.\\n\\nCaso tenha interesse ou dúvidas, estamos à disposição.\\n\\nAtenciosamente,\\nEquipe de Investimentos\",\n    \"html_body\": \"<p>Olá Daniel Oliveira,</p><p>Conforme seu perfil conservador e o saldo disponível de <strong>R$ 850,00</strong>, sugerimos considerar a aplicação em <strong>Poupança</strong>, que atualmente apresenta rentabilidade de <strong>6,2% ao ano</strong>. O valor mínimo para aplicação é de <strong>R$ 100,00</strong>.</p><p>Caso tenha interesse ou dúvidas, estamos à disposição.</p><p>Atenciosamente,<br>Equipe de Investimentos</p>\"\n}"
+        },
+        "pairedItem": {
+          "item": 3
+        }
+      },
+      {
+        "json": {
+          "output": "{\n  \"ok\": \"email_generated\",\n  \"to\": \"elena@email.com\",\n  \"subject\": \"Sugestão de investimento em Poupança\",\n  \"text_body\": \"Olá Elena Rodrigues,\\n\\nConforme seu perfil arrojado, gostaríamos de apresentar a opção de aplicação em Poupança. O investimento tem rentabilidade de 6,2% ao ano e aceita aportes a partir de R$ 100,00.\\n\\nVale lembrar que a rentabilidade pode variar ao longo do tempo e não há garantias de retorno.\\n\\nCaso tenha interesse ou queira mais detalhes, estamos à disposição.\\n\\nAtenciosamente,\\nEquipe de Relacionamento\",\n  \"html_body\": \"<p>Olá Elena Rodrigues,</p><p>Conforme seu perfil arrojado, gostaríamos de apresentar a opção de aplicação em <strong>Poupança</strong>. O investimento tem rentabilidade de <strong>6,2% ao ano</strong> e aceita aportes a partir de <strong>R$ 100,00</strong>.</p><p>Vale lembrar que a rentabilidade pode variar ao longo do tempo e não há garantias de retorno.</p><p>Caso tenha interesse ou queira mais detalhes, estamos à disposição.</p><p>Atenciosamente,<br>Equipe de Relacionamento</p>\"\n}"
+        },
+        "pairedItem": {
+          "item": 4
+        }
+      },
+      {
+        "json": {
+          "output": "{\n    \"ok\": \"success\",\n    \"to\": \"felipe@email.com\",\n    \"subject\": \"Sugestão de investimento – Poupança\",\n    \"text_body\": \"Olá Felipe Santos,\\n\\nCom base no seu perfil moderado e no saldo disponível de R$ 7.800,00, gostaríamos de sugerir a aplicação em Poupança. O investimento tem rentabilidade de aproximadamente 6,2% ao ano e aceita aportes a partir de R$ 100,00.\\n\\nLembramos que os resultados podem variar de acordo com as condições de mercado e que não há garantias de ganhos.\\n\\nCaso tenha interesse ou queira mais detalhes, estamos à disposição.\\n\\nAtenciosamente,\\nEquipe de Investimentos\",\n    \"html_body\": \"<p>Olá Felipe Santos,</p><p>Com base no seu perfil moderado e no saldo disponível de <strong>R$ 7.800,00</strong>, gostaríamos de sugerir a aplicação em <strong>Poupança</strong>. O investimento tem rentabilidade de aproximadamente <strong>6,2% ao ano</strong> e aceita aportes a partir de <strong>R$ 100,00</strong>.</p><p>Lembramos que os resultados podem variar de acordo com as condições de mercado e que não há garantias de ganhos.</p><p>Caso tenha interesse ou queira mais detalhes, estamos à disposição.</p><p>Atenciosamente,<br>Equipe de Investimentos</p>\"\n}"
+        },
+        "pairedItem": {
+          "item": 5
+        }
+      },
+      {
+        "json": {
+          "output": "{\n  \"ok\": \"E-mail preparado\",\n  \"to\": \"gabriela@email.com\",\n  \"subject\": \"Sugestão de investimento em Poupança\",\n  \"text_body\": \"Olá Gabriela,\\n\\nConsiderando seu perfil conservador e o saldo disponível de R$ 1.500,00, sugerimos a aplicação em Poupança, com aporte mínimo de R$ 100,00. A taxa de rentabilidade atual está em torno de 6,2% ao ano, porém os rendimentos podem variar de acordo com as condições de mercado.\\n\\nCaso tenha dúvidas ou queira conversar sobre outras opções, estamos à disposição.\\n\\nAtenciosamente,\\nEquipe de Relacionamento\",\n  \"html_body\": \"<p>Olá Gabriela,</p><p>Considerando seu perfil conservador e o saldo disponível de <strong>R$ 1.500,00</strong>, sugerimos a aplicação em <strong>Poupança</strong>, com aporte mínimo de <strong>R$ 100,00</strong>. A taxa de rentabilidade atual está em torno de <strong>6,2% ao ano</strong>, porém os rendimentos podem variar de acordo com as condições de mercado.</p><p>Caso tenha dúvidas ou queira conversar sobre outras opções, estamos à disposição.</p><p>Atenciosamente,<br>Equipe de Relacionamento</p>\"\n}"
+        },
+        "pairedItem": {
+          "item": 6
+        }
+      },
+      {
+        "json": {
+          "output": "{\n  \"ok\": \"true\",\n  \"to\": \"henrique@email.com\",\n  \"subject\": \"Sugestão de investimento para sua carteira\",\n  \"text_body\": \"Olá Henrique Alves,\\n\\nCom base no seu perfil moderado e no saldo atual de R$ 22.300,00, sugerimos considerar a aplicação na Poupança. O investimento tem rentabilidade de aproximadamente 6,2% ao ano, com aporte mínimo de R$ 100,00.\\n\\nLembre‑se de que a rentabilidade pode variar e não há garantias de retorno.\\n\\nCaso tenha dúvidas ou queira conversar sobre outras opções, estou à disposição.\\n\\nAtenciosamente,\\n[Seu Nome]\\n[Seu Cargo]\\n[Seu Contato]\",\n  \"html_body\": \"<p>Olá Henrique Alves,</p><p>Com base no seu perfil moderado e no saldo atual de <strong>R$ 22.300,00</strong>, sugerimos considerar a aplicação na <strong>Poupança</strong>. O investimento tem rentabilidade de aproximadamente <strong>6,2% ao ano</strong>, com aporte mínimo de <strong>R$ 100,00</strong>.</p><p>Lembre‑se de que a rentabilidade pode variar e não há garantias de retorno.</p><p>Caso tenha dúvidas ou queira conversar sobre outras opções, estou à disposição.</p><p>Atenciosamente,<br>[Seu Nome]<br>[Seu Cargo]<br>[Seu Contato]</p>\"\n}"
+        },
+        "pairedItem": {
+          "item": 7
+        }
+      },
+      {
+        "json": {
+          "output": "{\n    \"ok\": \"true\",\n    \"to\": \"isabela@email.com\",\n    \"subject\": \"Sugestão de investimento em Poupança\",\n    \"text_body\": \"Olá Isabela Martins,\\n\\nConsiderando seu perfil conservador e o saldo de R$ 500,00, sugerimos a aplicação em Poupança, que aceita aportes a partir de R$ 100,00. Essa modalidade costuma apresentar rentabilidade em torno de 6,2% ao ano, porém os rendimentos podem variar ao longo do tempo.\\n\\nCaso tenha interesse ou queira esclarecer dúvidas, estamos à disposição.\\n\\nAtenciosamente,\\nEquipe de Investimentos\",\n    \"html_body\": \"<p>Olá Isabela Martins,</p><p>Considerando seu perfil conservador e o saldo de <strong>R$ 500,00</strong>, sugerimos a aplicação em <strong>Poupança</strong>, que aceita aportes a partir de <strong>R$ 100,00</strong>. Essa modalidade costuma apresentar rentabilidade em torno de <strong>6,2% ao ano</strong>, porém os rendimentos podem variar ao longo do tempo.</p><p>Caso tenha interesse ou queira esclarecer dúvidas, estamos à disposição.</p><p>Atenciosamente,<br/>Equipe de Investimentos</p>\"\n}"
+        },
+        "pairedItem": {
+          "item": 8
+        }
+      },
+      {
+        "json": {
+          "output": "{\n  \"ok\": \"email_ready\",\n  \"to\": \"joao@email.com\",\n  \"subject\": \"Opção de investimento em Poupança\",\n  \"text_body\": \"Olá João Pereira,\\n\\nConforme seu perfil arrojado, apresentamos a opção de aplicação na Poupança, com rentabilidade de aproximadamente 6,2% ao ano. O investimento mínimo é de R$100,00. Caso tenha interesse ou queira mais detalhes, estamos à disposição.\\n\\nAtenciosamente,\\nEquipe de Investimentos\",\n  \"html_body\": \"<p>Olá João Pereira,</p><p>Conforme seu perfil arrojado, apresentamos a opção de aplicação na <strong>Poupança</strong>, com rentabilidade de aproximadamente 6,2% ao ano. O investimento mínimo é de R$100,00.</p><p>Caso tenha interesse ou queira mais detalhes, estamos à disposição.</p><p>Atenciosamente,<br/>Equipe de Investimentos</p>\"\n}"
+        },
+        "pairedItem": {
+          "item": 9
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Respond to Webhook": {
+      "main": [
+        []
+      ]
+    },
+    "Groq Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Normaliza e organizar o codigo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normaliza e organizar o codigo": {
+      "main": [
+        [
+          {
+            "node": "Verifica se o e-mail é verdadeiro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recebimento dos dados": {
+      "main": [
+        [
+          {
+            "node": "Coleta de dados",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Mesclagem de dados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Coleta de dados": {
+      "main": [
+        [
+          {
+            "node": "JSON CSV",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mesclagem de dados": {
+      "main": [
+        [
+          {
+            "node": "Mensagem personalizada para cada cliente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JSON CSV": {
+      "main": [
+        [
+          {
+            "node": "Mesclagem de dados",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Mensagem personalizada para cada cliente": {
+      "main": [
+        [
+          {
+            "node": "Refina o recebimento do codigo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Refina o recebimento do codigo": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verifica se o e-mail é verdadeiro": {
+      "main": [
+        [
+          {
+            "node": "Envio de E-mail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Envio de E-mail": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "f4d6e517-0ea5-40f6-b5c1-621342e99d2e",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "4f84a7d8ba95a0baf35dd7a17e6463e8472495f8dcb01186e7d5ca35ae334368"
+  },
+  "nodeGroups": [],
+  "id": "NwHWpqH498XAjAl3",
+  "tags": []
+}
